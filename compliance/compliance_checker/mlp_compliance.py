@@ -40,17 +40,22 @@ def run_check_exec(ll, tag, code, state, action):
 enqueued_configs = []
 
 # this function can be called from yaml
-def enqueue_config(config):
-    enqueued_configs.append(config)
+def enqueue_config(config, initial_state={}):
+    """
+    Schedules the next config to be executed
+    Args:
+        config: path to the yaml file containing the config to be executed
+        initial_state (dict): the state of the config will be initialized with this value
+    """
+    enqueued_configs.append((config, initial_state))
 
-def configured_checks(loglines, config_file):
+def configured_checks(loglines, config_file, s={}):
     with open(config_file) as f:
         checks = yaml.load(f, Loader=yaml.BaseLoader)
 
     if checks is None:
         return
 
-    s = {}  # this would be visible from inside configs
     state = {'enqueue_config':enqueue_config , 's':s}
 
     #execute begin block
@@ -111,14 +116,14 @@ def check_loglines(loglines, config):
 
     current_dir = os.path.dirname(os.path.abspath(__file__))
     while len(enqueued_configs)>0:
-        current_config = enqueued_configs.pop(0)
+        current_config, initial_state = enqueued_configs.pop(0)
         config_file = general_file = os.path.join(current_dir, current_config)
 
         if not os.path.exists(config_file):
             raise CCError('Could not find config file: {}'.format(config_file))
 
         # processing a config may have a side affect of pushing another config(s) to be checked
-        configured_checks(loglines,  config_file)
+        configured_checks(loglines,  config_file, initial_state)
 
 
 def check_file(args):
@@ -142,7 +147,7 @@ def main():
     parser.add_argument('filename', type=str,
                     help='the file to check for compliance')
     parser.add_argument('--config',  type=str,
-                    help='mlperf logging config', default='0.6.0/common.yaml')
+                    help='mlperf logging config', default='complaince_check_0.6.0/common.yaml')
 
     args = parser.parse_args()
 

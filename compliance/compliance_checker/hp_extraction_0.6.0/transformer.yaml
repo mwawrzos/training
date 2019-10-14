@@ -1,0 +1,42 @@
+- BEGIN:
+    CODE: |
+        s.setdefault('summary', {})
+
+- END:
+    PRE: |
+        import yaml
+        import sys
+        yaml.safe_dump(s['summary'], sys.stdout, default_flow_style=False)
+
+- KEY:
+    NAME:  global_batch_size
+    POST:  " s['summary']['global_batch_size'] = v['value'] "
+
+- KEY:
+    NAME:  opt_name
+    POST:  " s['summary']['opt_name'] = v['value'] "
+
+- KEY:
+    NAME:  opt_base_learning_rate
+    POST:  " s['summary']['opt_base_learning_rate'] = v['value'] "
+
+- KEY:
+    NAME:  opt_learning_rate_warmup_steps
+    POST:  " s['summary']['opt_learning_rate_warmup_steps'] = v['value'] "
+
+- KEY:
+    NAME:  max_sequence_length
+    POST:  " s['summary']['max_sequence_length'] = v['value'] "
+
+- KEY:
+    NAME:  opt_adam_beta_1
+    POST:  " s['summary']['opt_adam_beta_1'] = v['value'] "
+
+- KEY:
+    NAME:  opt_adam_beta_2
+    POST:  " s['summary']['opt_adam_beta_2'] = v['value'] "
+
+- KEY:
+    NAME:  opt_adam_epsilon
+    POST:  " s['summary']['opt_adam_epsilon'] = v['value'] "
+

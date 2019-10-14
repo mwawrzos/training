@@ -1,0 +1,51 @@
+
+- BEGIN:
+    CODE: |
+        s.setdefault('summary', {})
+
+- END:
+    PRE: |
+        import yaml
+        import sys
+        yaml.safe_dump(s['summary'], sys.stdout, default_flow_style=False)
+
+- KEY:
+    NAME:  global_batch_size
+    POST:  " s['summary']['global_batch_size'] = v['value'] "
+
+- KEY:
+    NAME:  opt_learning_rate_alt_decay_func
+    POST:  " s['summary']['opt_learning_rate_alt_decay_func'] = v['value'] "
+
+- KEY:
+    NAME:  opt_base_learning_rate
+    POST:  " s['summary']['opt_base_learning_rate'] = v['value'] "
+
+- KEY:
+    NAME:  opt_learning_rate_decay_interval
+    POST:  " s['summary']['opt_learning_rate_decay_interval'] = v['value'] "
+
+- KEY:
+    NAME:  opt_learning_rate_decay_factor
+    POST:  " s['summary']['opt_learning_rate_decay_factor'] = v['value'] "
+
+- KEY:
+    NAME:  opt_learning_rate_decay_steps
+    POST:  " s['summary']['opt_learning_rate_decay_steps'] = v['value'] "
+
+- KEY:
+    NAME:  opt_learning_rate_remain_steps
+    POST:  " s['summary']['opt_learning_rate_remain_steps'] = v['value'] "
+
+- KEY:
+    NAME:  opt_learning_rate_alt_warmup_func
+    POST:  " s['summary']['opt_learning_rate_alt_warmup_func'] = v['value'] "
+
+- KEY:
+    NAME:  opt_learning_rate_warmup_steps
+    POST:  " s['summary']['opt_learning_rate_warmup_steps'] = v['value'] "
+
+- KEY:
+    NAME:  max_sequence_length
+    POST:  " s['summary']['max_sequence_length'] = v['value'] "
+

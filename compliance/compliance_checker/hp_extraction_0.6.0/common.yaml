@@ -1,0 +1,64 @@
+# This file lists all the KEYs to be checked. Every line that matches mlperf logging regex (::MLL...) will be checked against these rules.
+# In the order of the appearance in the log, for each line will execute the code specified under CHECK for the KEY in that line.
+# The code will be launched using local state 'v' which is the content of value field in log line, and global state 's'.
+# Global state 's' exists to allow cross-line checks, like start/stop pairs etc. To initialize 's' use BEGIN record which CODE will
+# be executed before any checks.
+# In addition, occurrence of each key will be counted and at the end if a requirement regarding the number of occurrences is defined it will 
+# be confirmed. This could be implemented using global state, but since this is a common thing to do it is natively supported.
+# 
+# KEY record:
+# NAME
+# REQ   - optional - {EXACTLY_ONE, AT_LEAST_ONE}
+# PRE   - optional - code to be executed before CHECK
+# CHECK - optional - expression to be evaluated to verify correctness
+# POST  - optional - code to be executed after CHECK
+
+- BEGIN:
+    CODE: |
+        s.setdefault('summary', {})
+
+- END:
+    PRE: |
+        enqueue_config('hp_extraction_0.6.0/{}.yaml'.format(s['next_config']),
+                       {'summary': s['summary']}) 
+
+- KEY:
+    NAME:  submission_org
+    POST:  " s['summary']['submission_org'] = v['value'] "
+
+- KEY:
+    NAME:  submission_platform
+    POST:  " s['summary']['submission_platform'] = v['value'] "
+
+- KEY:
+    NAME:  submission_division
+    POST:  " s['summary']['submission_division'] = v['value'] "
+
+- KEY:
+    NAME:  submission_status
+    POST:  " s['summary']['submission_status'] = v['value'] "
+
+- KEY:
+    NAME:  submission_benchmark
+    POST:  " s['summary']['submission_benchmark'] = v['value'] "
+
+# minigo should use it's dedicated config directly
+- KEY:
+    NAME:  submission_benchmark
+    REQ:   EXACTLY_ONE
+    POST:  " s['next_config'] = v['value'] "
+
+# since target is not printed I can not confirm the accuracy
+- KEY:
+    NAME:  eval_accuracy
+    POST:  " s['summary']['eval_accuracy'] = v['value'] "
+
+- KEY:
+    NAME:  run_start
+    REQ:   EXACTLY_ONE
+    POST:  " s['run_start'] = ll.timestamp "
+
+- KEY:
+    NAME:  run_stop
+    POST:  " s['summary']['score [sec]'] = ll.timestamp - s['run_start'] "
+

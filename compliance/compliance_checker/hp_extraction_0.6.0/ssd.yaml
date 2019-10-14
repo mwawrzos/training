@@ -1,0 +1,39 @@
+
+- BEGIN:
+    CODE: |
+        s.setdefault('summary', {})
+
+- END:
+    PRE: |
+        import yaml
+        import sys
+        yaml.safe_dump(s['summary'], sys.stdout, default_flow_style=False)
+
+- KEY:
+    NAME:  global_batch_size
+    POST:  " s['summary']['global_batch_size'] = v['value'] "
+
+- KEY:
+    NAME:  opt_base_learning_rate
+    POST:  " s['summary']['opt_base_learning_rate'] = v['value'] "
+
+- KEY:
+    NAME:  opt_weight_decay
+    POST:  " s['summary']['opt_weight_decay'] = v['value'] "
+
+- KEY:
+    NAME:  opt_learning_rate_warmup_steps
+    POST:  " s['summary']['opt_learning_rate_warmup_steps'] = v['value'] "
+
+- KEY:
+    NAME:  opt_learning_rate_warmup_factor
+    POST:  " s['summary']['opt_learning_rate_warmup_factor'] = v['value'] "
+
+- KEY:
+    NAME:  max_samples
+    POST:  " s['summary']['max_samples'] = v['value'] "
+
+- KEY:
+    NAME:  model_bn_span
+    POST:  " s['summary']['model_bn_span'] = v['value'] "
+

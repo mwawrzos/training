@@ -10,11 +10,11 @@ To check a log file for compliance:
 
     python mlp_compliance.py [--config YAML] FILENAME
 
-Default config is set to `0.6.0/common.yaml`. This config will check all common keys and enqueue benchmark specific config to be checked as well.
+Default config is set to `complaince_check_0.6.0/common.yaml`. This config will check all common keys and enqueue benchmark specific config to be checked as well.
 
 Note that `minigo` has a specialized config, therefore to check minigo please use
 
-    python mlp_compliance.py --config 0.6.0/minigo.yaml FILENAME 
+    python mlp_compliance.py --config complaince_check_0.6.0/minigo.yaml FILENAME 
 
 
 Prints `SUCCESS` when no issues were found. Otherwise will print error details.
@@ -24,14 +24,19 @@ As log examples use [NVIDIA's v0.6 training logs](https://github.com/mlperf/trai
 
 ### Existing config files
 
-    0.6.0/common.yaml        - currently the default config file, checks common fields complience(excluding minigo) and equeues benchmark-specific config file
-    0.6.0/score.yaml         - printing out the score (in sec) from a log of any benchmark - example of how this infrastructure can be used
-    0.6.0/resnet.yaml        
-    0.6.0/ssd.yaml
-    0.6.0/minigo.yaml
-    0.6.0/maskrcnn.yaml
-    0.6.0/gnmt.yaml
-    0.6.0/transformer.yaml
+    complaince_check_0.6.0/common.yaml        - currently the default config file, checks common fields complience(excluding minigo) and equeues benchmark-specific config file
+    complaince_check_0.6.0/score.yaml         - printing out the score (in sec) from a log of any benchmark - example of how this infrastructure can be used
+    complaince_check_0.6.0/resnet.yaml
+    complaince_check_0.6.0/ssd.yaml
+    complaince_check_0.6.0/minigo.yaml
+    complaince_check_0.6.0/maskrcnn.yaml
+    complaince_check_0.6.0/gnmt.yaml
+    complaince_check_0.6.0/transformer.yaml
+
+
+Directory `hp_extraction_0.6.0` contains rules for summarization of submission logs.
+In addition to the useful functionality, it is a simple example, how to use the compliance checker infrastructure.
+Please see the [hp_extraction README](hp_extraction_0.6.0/README.md) for details.
 
 ### Implementation details
 Compliance checking is done following below algorithm. It will be aborted in case of an error at any phase.
@@ -141,7 +146,7 @@ Example:
         NAME:  submission_benchmark
         REQ:   EXACTLY_ONE
         CHECK: " v['value'] in ['resnet', 'ssd', 'maskrcnn', 'transformer', 'gnmt'] "
-        POST:  " enqueue_config('0.6.0/{}.yaml'.format(v['value'])) "
+        POST:  " enqueue_config('complaince_check_0.6.0/{}.yaml'.format(v['value'])) "
 
 
 #### Other operations
