@@ -91,6 +91,7 @@ def train(
         labels,
         multi_gpu,
         transforms,
+        eval_transforms,
         args,
         logger,
         fn_lr_policy):
@@ -121,7 +122,7 @@ def train(
             eval_dataloader = data_layer_eval.data_iterator
             for data in eval_dataloader:
 
-                t_audio_signal_e, t_a_sig_length_e, t_transcript_e, t_transcript_len_e = transforms(data)
+                t_audio_signal_e, t_a_sig_length_e, t_transcript_e, t_transcript_len_e = eval_transforms(data)
 
                 model.eval()
                 t_log_probs_e, (x_len, y_len) = model(
@@ -292,14 +293,20 @@ def main(args):
     preprocessor = preprocessing.AudioPreprocessing(**featurizer_config)
     preprocessor.cuda()
 
-    cutout = preprocessing.SpectrogramAugmentation(**featurizer_config)
-    cutout.cuda()
+    augmentations = preprocessing.SpectrogramAugmentation(**featurizer_config)
+    augmentations.cuda()
 
     transforms = torchvision.transforms.Compose([
-        lambda xs, isTrain: [x.cuda() for x in xs],
-        lambda xs, isTrain: [*preprocessor(xs[0:2]), *xs[2:]],
-        lambda xs, isTrain: [*cutout(xs[0:1]),       *xs[1:]] if isTrain else xs,
-        lambda xs, isTrain: [xs[0].permute(2, 0, 1), *xs[1:]],
+        lambda xs: [x.cuda() for x in xs],
+        lambda xs: [*preprocessor(xs[0:2]), *xs[2:]],
+        lambda xs: [augmentations(xs[0]),   *xs[1:]],
+        lambda xs: [xs[0].permute(2, 0, 1), *xs[1:]],
+    ])
+
+    eval_transforms = torchvision.transforms.Compose([
+        lambda xs: [x.cuda() for x in xs],
+        lambda xs: [*preprocessor(xs[0:2]), *xs[2:]],
+        lambda xs: [xs[0].permute(2, 0, 1), *xs[1:]],
     ])
 
     data_layer = AudioToTextDataLayer(
@@ -417,6 +424,7 @@ def main(args):
         greedy_decoder=greedy_decoder,
         optimizer=optimizer,
         transforms=transforms,
+        eval_transforms=eval_transforms,
         labels=ctc_vocab,
         optim_level=optim_level,
         multi_gpu=multi_gpu,
