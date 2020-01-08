@@ -330,8 +330,8 @@ def main(args):
             multi_gpu=multi_gpu,
             pad_to_max=args.pad_to_max
         ),
-        'Eval clean',
         args.eval_frequency,
+        'Eval clean',
     )]
 
     if tst_manifest:
@@ -345,8 +345,8 @@ def main(args):
                 multi_gpu=multi_gpu,
                 pad_to_max=args.pad_to_max
             ),
-            'Test other',
             args.train_frequency,
+            'Test other',
         ))
 
     model = RNNT(
