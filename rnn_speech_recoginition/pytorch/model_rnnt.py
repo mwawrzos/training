@@ -20,6 +20,20 @@ import torch.nn as nn
 from rnn import rnn
 from rnn import StackTime
 
+class BnReLUDropout(torch.nn.Module):
+    def __init__(self, input_size, dropout):
+        super(BnReLUDropout, self).__init__()
+        self.bn = torch.nn.BatchNorm1d(input_size)
+        self.relu = torch.nn.ReLU()
+        self.dropout = nn.Dropout(p=dropout)
+
+    def forward(self, x):
+        B, T, H = x.shape
+        x = x.reshape([B*T, H])
+        x = self.bn(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+        return x.reshape([B, T, H])
 
 class RNNT(torch.nn.Module):
     """A Recurrent Neural Network Transducer (RNN-T).
@@ -98,9 +112,11 @@ class RNNT(torch.nn.Module):
                 num_layers=encoder_pre_rnn_layers,
                 norm=norm,
                 forget_gate_bias=forget_gate_bias,
-                dropout=dropout,
+                dropout=0.0,
             ),
             "stack_time": StackTime(factor=encoder_stack_time_factor),
+            "bn_relu_drop1": BnReLUDropout(input_size=encoder_n_hidden, dropout=dropout),
+            "bn_relu_drop2": BnReLUDropout(input_size=encoder_n_hidden, dropout=dropout),
             "post_rnn": rnn(
                 rnn=rnn_type,
                 input_size=encoder_stack_time_factor*encoder_n_hidden,
@@ -109,7 +125,7 @@ class RNNT(torch.nn.Module):
                 norm=norm,
                 forget_gate_bias=forget_gate_bias,
                 norm_first_rnn=True,
-                dropout=dropout,
+                dropout=0.0,
             ),
         })
         return layers
@@ -125,8 +141,9 @@ class RNNT(torch.nn.Module):
                 num_layers=pred_rnn_layers,
                 norm=norm,
                 forget_gate_bias=forget_gate_bias,
-                dropout=dropout,
+                dropout=0.0,
             ),
+            "bn_relu_drop": BnReLUDropout(input_size=pred_n_hidden, dropout=dropout),
         })
         return layers
 
@@ -135,7 +152,6 @@ class RNNT(torch.nn.Module):
         layers = [
             torch.nn.Linear(pred_n_hidden + enc_n_hidden, joint_n_hidden),
             torch.nn.ReLU(),
-        ] + ([ torch.nn.Dropout(p=dropout), ] if dropout else [ ]) + [
             torch.nn.Linear(joint_n_hidden, vocab_size)
         ]
         return torch.nn.Sequential(
@@ -168,8 +184,10 @@ class RNNT(torch.nn.Module):
         """
         x, x_lens = x
         x, _ = self.encoder["pre_rnn"](x, None)
+        x = self.encoder["bn_relu_drop1"](x)
         x, x_lens = self.encoder["stack_time"]((x, x_lens))
         x, _ = self.encoder["post_rnn"](x, None)
+        x = self.encoder["bn_relu_drop2"](x)
 
         return x.transpose(0, 1), x_lens
 
@@ -219,6 +237,7 @@ class RNNT(torch.nn.Module):
 
         y = y.transpose(0, 1)#.contiguous()   # (U + 1, B, H)
         g, hid = self.prediction["dec_rnn"](y, state)
+        g = self.prediction["bn_relu_drop"](g)
         g = g.transpose(0, 1)#.contiguous()   # (B, U + 1, H)
         del y, start, state
         return g, hid
