@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import argparse
 import itertools
 import os
@@ -36,6 +37,16 @@ import torchvision
 from tb_logger import DummyLogger, TensorBoardLogger
 import preprocessing
 
+
+class PolyakDecay:
+    def __init__(self, model, decay):
+        self.avg_state_dict = copy.deepcopy(model.state_dict())
+        self.decay = decay
+
+    def step(self, model):
+        for param in self.avg_state_dict:
+            self.avg_state_dict[param] = self.decay       * self.avg_state_dict[param] \
+                                       + (1 - self.decay) * model.state_dict()[param]
 
 def lr_decay(N, step, learning_rate):
     """
@@ -77,57 +88,66 @@ def save(model, optimizer, epoch, output_dir):
     print_once('Saved.')
 
 
-def evaluator(model, data_transforms, loss_fn, greedy_decoder, labels, eval_datasets, logger):
+def evaluator(model, data_transforms, loss_fn, greedy_decoder, labels, eval_datasets, polyak_decay, logger):
     """Evaluates model on evaluation dataset
     """
 
-    def evalutaion(epoch=0):
+    def evaluation(model, dataset, name, epoch):
         model.eval()
 
+        print_once(f"Doing {name} ....................... ......  ... .. . .")
+
+        with torch.no_grad():
+            _global_var_dict = {
+                'EvalLoss': [],
+                'predictions': [],
+                'transcripts': [],
+            }
+            dataloader = dataset.data_iterator
+            for data in dataloader:
+
+                t_audio_signal_e, t_a_sig_length_e, t_transcript_e, t_transcript_len_e = data_transforms(data)
+
+                t_log_probs_e, (x_len, y_len) = model(
+                    ((t_audio_signal_e, t_transcript_e), (t_a_sig_length_e, t_transcript_len_e)),
+                )
+                t_loss_e = loss_fn(
+                    (t_log_probs_e, x_len), (t_transcript_e, y_len)
+                )
+                del t_log_probs_e
+
+                t_predictions_e = greedy_decoder.decode(t_audio_signal_e, t_a_sig_length_e)
+
+                values_dict = dict(
+                    loss=[t_loss_e],
+                    predictions=[t_predictions_e],
+                    transcript=[t_transcript_e],
+                    transcript_length=[t_transcript_len_e]
+                )
+                process_evaluation_batch(values_dict, _global_var_dict, labels=labels)
+
+            # final aggregation across all workers and minibatches) and logging of results
+            wer, eloss = process_evaluation_epoch(_global_var_dict)
+            logger.log_scalar('loss', eloss, epoch, name)
+            logger.log_scalar('wer', wer, epoch, name)
+
+            print_once(f"==========>>>>>>{name} Loss: {eloss}\n")
+            print_once(f"==========>>>>>>{name} WER: {wer}\n")
+
+    def eval(epoch=0):
         for dataset, frequency, name in eval_datasets:
+            print(epoch, frequency, name)
             if epoch % frequency != 0:
                 continue
 
-            print_once(f"Doing {name} ....................... ......  ... .. . .")
+            evaluation(model, dataset, name, epoch)
 
-            with torch.no_grad():
-                _global_var_dict = {
-                    'EvalLoss': [],
-                    'predictions': [],
-                    'transcripts': [],
-                }
-                dataloader = dataset.data_iterator
-                for data in dataloader:
+            old_state = copy.deepcopy(model.state_dict())
+            model.load_state_dict(polyak_decay.avg_state_dict)
+            evaluation(model, dataset, name + ' Polyak Decay', epoch)
+            model.load_state_dict(old_state)
 
-                    t_audio_signal_e, t_a_sig_length_e, t_transcript_e, t_transcript_len_e = data_transforms(data)
-
-                    t_log_probs_e, (x_len, y_len) = model(
-                        ((t_audio_signal_e, t_transcript_e), (t_a_sig_length_e, t_transcript_len_e)),
-                    )
-                    t_loss_e = loss_fn(
-                        (t_log_probs_e, x_len), (t_transcript_e, y_len)
-                    )
-                    del t_log_probs_e
-
-                    t_predictions_e = greedy_decoder.decode(t_audio_signal_e, t_a_sig_length_e)
-
-                    values_dict = dict(
-                        loss=[t_loss_e],
-                        predictions=[t_predictions_e],
-                        transcript=[t_transcript_e],
-                        transcript_length=[t_transcript_len_e]
-                    )
-                    process_evaluation_batch(values_dict, _global_var_dict, labels=labels)
-
-                # final aggregation across all workers and minibatches) and logging of results
-                wer, eloss = process_evaluation_epoch(_global_var_dict)
-                logger.log_scalar('loss', eloss, epoch, name)
-                logger.log_scalar('wer', wer, epoch, name)
-
-                print_once(f"==========>>>>>>{name} Loss: {eloss}\n")
-                print_once(f"==========>>>>>>{name} WER: {wer}\n")
-
-    return evalutaion
+    return eval
 
 
 def train(
@@ -141,7 +161,8 @@ def train(
         multi_gpu,
         data_transforms,
         args,
-        evalutaion,
+        evaluation,
+        polyak_decay,
         logger,
         fn_lr_policy):
     """Trains model
@@ -206,6 +227,7 @@ def train(
 
             if batch_counter % args.gradient_accumulation_steps == 0:
                 optimizer.step()
+                polyak_decay.step(model)
 
                 if (step + 1) % args.train_frequency == 0:
                     t_predictions_t = greedy_decoder.decode(t_audio_signal_t, t_a_sig_length_t)
@@ -222,7 +244,7 @@ def train(
                 if args.num_steps is not None and step >= args.num_steps:
                     break
 
-        evalutaion(epoch)
+        evaluation(epoch)
 
         if args.num_steps is not None and step >= args.num_steps:
             break
@@ -234,7 +256,7 @@ def train(
             break
     print_once("Done in {0}".format(time.time() - start_time))
     print_once("Final Evaluation ....................... ......  ... .. . .")
-    evalutaion()
+    evaluation()
     save(model, optimizer, epoch, output_dir=args.output_dir)
 
 def main(args):
@@ -397,6 +419,10 @@ def main(args):
         optimizer = AdamW(model.parameters(),
                         lr=args.lr,
                         weight_decay=args.weight_decay)
+    elif args.optimizer_kind == "fused_novograd":
+        optimizer = apex.optimizer.FusedNovoGrad(model.parameters(),
+                lr=args.lr,
+                weight_decay=args.weight_decay)
     else:
         raise ValueError("invalid optimizer choice: {}".format(args.optimizer_kind))
 
@@ -421,6 +447,8 @@ def main(args):
     else:
         logger = DummyLogger()
 
+    polyak_decay = PolyakDecay(model, 0.998)
+
     train(
         data_layer=data_layer,
         model=model,
@@ -432,7 +460,8 @@ def main(args):
         optim_level=optim_level,
         multi_gpu=multi_gpu,
         fn_lr_policy=fn_lr_policy,
-        evalutaion=evaluator(model, eval_transforms, loss_fn, greedy_decoder, ctc_vocab, eval_datasets, logger),
+        evaluation=evaluator(model, eval_transforms, loss_fn, greedy_decoder, ctc_vocab, eval_datasets, polyak_decay, logger),
+        polyak_decay=polyak_decay,
         logger=logger,
         args=args)
 
