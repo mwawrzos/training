@@ -48,6 +48,29 @@ class PolyakDecay:
             self.avg_state_dict[param] = self.decay       * self.avg_state_dict[param] \
                                        + (1 - self.decay) * model.state_dict()[param]
 
+
+class LinearWeightNoise:
+    def __init__(self, model, start, noise):
+        self.model = model
+        self.start = start
+        self.noise = noise
+
+    def apply(self, step):
+        magnitude = min(1.0, step / self.start)
+        weight_noise_value = {}
+
+        for name, weight in self.model.named_parameters():
+            if 'weight' in name and 'norm' not in name:
+                weight_noise_value[name] = self.noise * magnitude * torch.randn_like(weight)
+                weight.data.add_(weight_noise_value[name])
+
+        return weight_noise_value
+
+    def revert(self, weight_noise_value):
+        for name, weight in self.model.named_parameters():
+            if 'weight' in name and 'norm' not in name:
+                weight.data.add_(-weight_noise_value[name])
+
 def lr_decay(N, step, learning_rate):
     """
     learning rate decay
@@ -163,6 +186,7 @@ def train(
         args,
         evaluation,
         polyak_decay,
+        weight_noise,
         logger,
         fn_lr_policy):
     """Trains model
@@ -205,9 +229,13 @@ def train(
             t_audio_signal_t, t_a_sig_length_t, t_transcript_t, t_transcript_len_t = data_transforms(data)
             model.train()
 
+            noises = weight_noise.apply(step)
+
             t_log_probs_t, (x_len, y_len) = model(
                 ((t_audio_signal_t, t_transcript_t), (t_a_sig_length_t, t_transcript_len_t)),
             )
+
+            weight_noise.revert(noises)
 
             t_loss_t = loss_fn(
                 (t_log_probs_t, x_len), (t_transcript_t, y_len)
@@ -462,6 +490,7 @@ def main(args):
         fn_lr_policy=fn_lr_policy,
         evaluation=evaluator(model, eval_transforms, loss_fn, greedy_decoder, ctc_vocab, eval_datasets, polyak_decay, logger),
         polyak_decay=polyak_decay,
+        weight_noise=LinearWeightNoise(model, args.weight_noise_warmup, args.weight_noise_value),
         logger=logger,
         args=args)
 
@@ -478,6 +507,8 @@ def parse_args():
     parser.add_argument("--train_freq", dest="train_frequency", default=25, type=int, help='number of iterations until printing training statistics on the past iteration')
     parser.add_argument("--lr", default=1e-3, type=float, help='learning rate')
     parser.add_argument("--weight_decay", default=1e-3, type=float, help='weight decay rate')
+    parser.add_argument("--weight_noise_value", default=0.1, type=float, help='maximum noise added to weights')
+    parser.add_argument("--weight_noise_warmup", default=4e4, type=int, help='noise will be linearly increasing during this number of iterations')
     parser.add_argument("--train_manifest", type=str, required=True, help='relative path given dataset folder of training manifest file')
     parser.add_argument("--model_toml", type=str, required=True, help='relative path given dataset folder of model configuration file')
     parser.add_argument("--val_manifest", type=str, required=True, help='relative path given dataset folder of evaluation manifest file')
