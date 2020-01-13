@@ -20,20 +20,42 @@ import torch.nn as nn
 from rnn import rnn
 from rnn import StackTime
 
-class BnReLUDropout(torch.nn.Module):
-    def __init__(self, input_size, dropout):
-        super(BnReLUDropout, self).__init__()
+
+class BatchNorm(nn.Module):
+
+    def __init__(self, input_size):
+        super(BatchNorm, self).__init__()
         self.bn = torch.nn.BatchNorm1d(input_size)
-        self.relu = torch.nn.ReLU()
-        self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, x):
         B, T, H = x.shape
         x = x.reshape([B*T, H])
         x = self.bn(x)
-        x = self.relu(x)
-        x = self.dropout(x)
         return x.reshape([B, T, H])
+
+
+def get_normalization(config, input_size):
+    if config == 'batch_norm':
+        return BatchNorm(input_size)
+    if config == 'layer_norm':
+        return nn.LayerNorm(input_size)
+
+    else:
+        return lambda x: x
+
+
+class NormalizeReLU(torch.nn.Module):
+
+    def __init__(self, input_size, dropout, normalization):
+        super(NormalizeReLU, self).__init__()
+        self.normalization = normalization
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, x):
+        x = self.normalization(x)
+        x = self.relu(x)
+        return x
+
 
 class RNNT(torch.nn.Module):
     """A Recurrent Neural Network Transducer (RNN-T).
@@ -79,6 +101,7 @@ class RNNT(torch.nn.Module):
             None if "norm" not in rnnt else rnnt["norm"],
             rnnt["rnn_type"],
             rnnt["encoder_stack_time_factor"],
+            rnnt.get("normalization"),
             rnnt["dropout"],
         )
 
@@ -89,6 +112,7 @@ class RNNT(torch.nn.Module):
             rnnt["forget_gate_bias"],
             None if "norm" not in "rnnt" else rnnt["norm"],
             rnnt["rnn_type"],
+            rnnt.get("normalization"),
             rnnt["dropout"],
         )
 
@@ -103,7 +127,7 @@ class RNNT(torch.nn.Module):
     def _encoder(self, in_features, encoder_n_hidden,
                  encoder_pre_rnn_layers, encoder_post_rnn_layers,
                  forget_gate_bias, norm, rnn_type, encoder_stack_time_factor,
-                 dropout):
+                 normalization_config, dropout):
         layers = torch.nn.ModuleDict({
             "pre_rnn": rnn(
                 rnn=rnn_type,
@@ -112,11 +136,19 @@ class RNNT(torch.nn.Module):
                 num_layers=encoder_pre_rnn_layers,
                 norm=norm,
                 forget_gate_bias=forget_gate_bias,
-                dropout=0.0,
+                dropout=dropout,
             ),
             "stack_time": StackTime(factor=encoder_stack_time_factor),
-            "bn_relu_drop1": BnReLUDropout(input_size=encoder_n_hidden, dropout=dropout),
-            "bn_relu_drop2": BnReLUDropout(input_size=encoder_n_hidden, dropout=dropout),
+            "bn_relu_drop1": NormalizeReLU(
+                input_size=encoder_n_hidden,
+                dropout=dropout,
+                normalization=get_normalization(normalization_config, encoder_n_hidden)
+            ),
+            "bn_relu_drop2": NormalizeReLU(
+                input_size=encoder_n_hidden,
+                dropout=dropout,
+                normalization=get_normalization(normalization_config, encoder_n_hidden)
+            ),
             "post_rnn": rnn(
                 rnn=rnn_type,
                 input_size=encoder_stack_time_factor*encoder_n_hidden,
@@ -125,13 +157,13 @@ class RNNT(torch.nn.Module):
                 norm=norm,
                 forget_gate_bias=forget_gate_bias,
                 norm_first_rnn=True,
-                dropout=0.0,
+                dropout=dropout,
             ),
         })
         return layers
 
     def _predict(self, vocab_size, pred_n_hidden, pred_rnn_layers,
-                 forget_gate_bias, norm, rnn_type, dropout):
+                 forget_gate_bias, norm, rnn_type, normalization_config, dropout):
         layers = torch.nn.ModuleDict({
             "embed": torch.nn.Embedding(vocab_size - 1, pred_n_hidden),
             "dec_rnn": rnn(
@@ -141,9 +173,13 @@ class RNNT(torch.nn.Module):
                 num_layers=pred_rnn_layers,
                 norm=norm,
                 forget_gate_bias=forget_gate_bias,
-                dropout=0.0,
+                dropout=dropout,
             ),
-            "bn_relu_drop": BnReLUDropout(input_size=pred_n_hidden, dropout=dropout),
+            "bn_relu_drop": NormalizeReLU(
+                input_size=pred_n_hidden,
+                dropout=dropout,
+                normalization=get_normalization(normalization_config, pred_n_hidden)
+            ),
         })
         return layers
 
@@ -152,6 +188,7 @@ class RNNT(torch.nn.Module):
         layers = [
             torch.nn.Linear(pred_n_hidden + enc_n_hidden, joint_n_hidden),
             torch.nn.ReLU(),
+        ] + ([ torch.nn.Dropout(p=dropout), ] if dropout else [ ]) + [
             torch.nn.Linear(joint_n_hidden, vocab_size)
         ]
         return torch.nn.Sequential(
