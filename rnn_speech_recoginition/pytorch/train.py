@@ -48,7 +48,6 @@ class PolyakDecay:
             self.avg_state_dict[param] = self.decay       * self.avg_state_dict[param] \
                                        + (1 - self.decay) * model.state_dict()[param]
 
-
 class LinearWeightNoise:
     def __init__(self, model, start, noise):
         self.model = model
@@ -71,7 +70,7 @@ class LinearWeightNoise:
             if 'weight' in name and 'norm' not in name:
                 weight.data.add_(-weight_noise_value[name])
 
-def lr_decay(N, step, learning_rate):
+def lr_decay(N, start, step, learning_rate):
     """
     learning rate decay
     Args:
@@ -80,7 +79,11 @@ def lr_decay(N, step, learning_rate):
         N: total number of iterations over which learning rate is decayed
     """
     min_lr = 0.00001
-    res = learning_rate * ((N - step) / N) ** 2
+
+    decay_steps = N - start
+    decay_factor = min(1.0, (decay_steps - step)/decay_steps)
+
+    res = learning_rate * decay_factor ** 2
     return max(res, min_lr)
 
 def lr_warmup(warmup_steps, step, learning_rate):
@@ -430,7 +433,7 @@ def main(args):
     fn_lr_policy = constant_lr_policy
     if args.lr_decay:
         pre_decay_policy = fn_lr_policy
-        fn_lr_policy = lambda s: lr_decay(args.num_epochs * args.step_per_epoch, s, pre_decay_policy(s))
+        fn_lr_policy = lambda s: lr_decay(args.num_epochs * args.step_per_epoch, args.lr_decay_start, s, pre_decay_policy(s))
     if args.lr_warmup:
         pre_warmup_policy = fn_lr_policy
         fn_lr_policy = lambda s: lr_warmup(args.lr_warmup, s, pre_warmup_policy(s) )
@@ -519,6 +522,7 @@ def parse_args():
     parser.add_argument("--optimizer", dest="optimizer_kind", default="novograd", type=str, help='optimizer')
     parser.add_argument("--dataset_dir", dest="dataset_dir", required=True, type=str, help='root dir of dataset')
     parser.add_argument("--lr_decay", action="store_true", default=False, help='use learning rate decay')
+    parser.add_argument("--lr_decay_start", default=0, type=int, help='use learning rate decay')
     parser.add_argument("--lr_warmup", type=int, default=None, help='if provided, the learning rate will linearly scale for given number of iterations from zero')
     parser.add_argument("--cudnn", action="store_true", default=False, help="enable cudnn benchmark")
     parser.add_argument("--fp16", action="store_true", default=False, help="use mixed precision training")
