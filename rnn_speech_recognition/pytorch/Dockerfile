@@ -12,11 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG FROM_IMAGE_NAME=nvcr.io/nvidia/pytorch:19.09-py3
-FROM ${FROM_IMAGE_NAME}
+ARG DEVEL_IMG=pytorch/pytorch:1.4-cuda10.1-cudnn7-devel
+ARG RELEASE_IMG=pytorch/pytorch:1.4-cuda10.1-cudnn7-runtime
 
 
-RUN apt-get update && apt-get install -y libsndfile1 && apt-get install -y sox && rm -rf /var/lib/apt/lists/*
+FROM ${DEVEL_IMG} as build
+
+WORKDIR /workspace
+
+RUN apt-get update && apt-get install -y cmake=3.10.2-1ubuntu2.18.04.1
 
 RUN COMMIT_SHA=c6d12f9e1562833c2b4e7ad84cb22aa4ba31d18c && \
     git clone https://github.com/HawkAaron/warp-transducer deps/warp-transducer && \
@@ -34,13 +38,24 @@ RUN COMMIT_SHA=c6d12f9e1562833c2b4e7ad84cb22aa4ba31d18c && \
     export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH && \
     export CFLAGS="-I$CUDA_HOME/include $CFLAGS" && \
     cd ../pytorch_binding && \
-    python3 setup.py install --user && \
-    rm -rf ../tests test ../tensorflow_binding && \
-    cd ../../..
+    python3 setup.py install --user
 
-WORKDIR /workspace/jasper
+RUN pip install --user --global-option="--cpp_ext" --global-option="--cuda_ext" --disable-pip-version-check -U https://github.com/NVIDIA/apex/archive/b5a7c5f972bc644804408dd96d7cb515df3af07b.zip
 
 COPY requirements.txt .
-RUN pip install --disable-pip-version-check -U -r requirements.txt
+RUN pip install --user --disable-pip-version-check -U -r requirements.txt
+
+
+FROM ${RELEASE_IMG}
+
+RUN apt-get update && apt-get install -y libsndfile1=1.0.28-4ubuntu0.18.04.1 && rm -rf /var/lib/apt/lists/*
+
+ENV PATH=/root/.local/bin:$PATH
+ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+
+COPY --from=build /workspace/deps/warp-transducer/build/libwarprnnt.so /usr/local/lib
+COPY --from=build /root/.local/ /root/.local/
+
+WORKDIR /workspace/rnnt
 
 COPY . .
