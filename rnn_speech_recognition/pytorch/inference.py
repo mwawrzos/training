@@ -20,8 +20,8 @@ import math
 import toml
 from dataset import AudioToTextDataLayer
 from helpers import process_evaluation_batch, process_evaluation_epoch, Optimization, add_blank_label, AmpOptimizations, print_dict, model_multi_gpu
-from decoders import RNNTGreedyDecoder, TransducerBeamDecoder
-from model_rnnt import AudioPreprocessing, RNNT
+from decoders import RNNTGreedyDecoder#, TransducerBeamDecoder
+from model_rnnt import RNNT
 from parts.features import audio_from_file
 import torch
 import apex
@@ -30,6 +30,7 @@ import random
 import numpy as np
 import pickle
 import time
+import preprocessing
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Jasper')
@@ -79,7 +80,7 @@ def eval(
         }
 
 
-        
+
         if args.wav:
             features, p_length_e = audio_processor(audio_from_file(args.wav))
             torch.cuda.synchronize()
@@ -92,7 +93,7 @@ def eval(
             print("INFERENCE TIME\t\t: {} ms".format((t1-t0)*1000.0))
             print("TRANSCRIPT\t\t:", hypotheses[0])
             return
-        
+
         for it, data in enumerate(tqdm(data_layer.data_iterator)):
             tensors = []
             for d in data:
@@ -103,10 +104,15 @@ def eval(
             inp = (t_audio_signal_e, t_a_sig_length_e)
 
             t_processed_signal, p_length_e = audio_processor(x=inp)
+
+            t_processed_signal = t_processed_signal.permute(2, 0, 1)
+            if args.fp16:
+                t_processed_signal = t_processed_signal.half()
+
             t_log_probs_e, (x_len, y_len) = encoderdecoder(
-                ((t_audio_signal_e, t_transcript_e), (t_a_sig_length_e, t_transcript_len_e)),
+                ((t_processed_signal, t_transcript_e), (p_length_e, t_transcript_len_e)),
             )
-            t_predictions_e = greedy_decoder.decode(t_audio_signal_e, t_a_sig_length_e)
+            t_predictions_e = greedy_decoder.decode(t_processed_signal, p_length_e)
 
             values_dict = dict(
                 predictions=[t_predictions_e],
@@ -114,10 +120,12 @@ def eval(
                 transcript_length=[t_transcript_len_e],
                 output=[t_log_probs_e]
             )
+
             process_evaluation_batch(values_dict, _global_var_dict, labels=labels)
 
             if args.steps is not None and it + 1 >= args.steps:
                 break
+
         wer, _ = process_evaluation_epoch(_global_var_dict)
         if (not multi_gpu or (multi_gpu and torch.distributed.get_rank() == 0)):
             print("==========>>>>>>Evaluation WER: {0}\n".format(wer))
@@ -170,10 +178,10 @@ def main(args):
     print('feature_config')
     print_dict(featurizer_config)
     data_layer = None
-    
+
     if args.wav is None:
         data_layer = AudioToTextDataLayer(
-            dataset_dir=args.dataset_dir, 
+            dataset_dir=args.dataset_dir,
             featurizer_config=featurizer_config,
             manifest_filepath=val_manifest,
             labels=dataset_vocab,
@@ -181,7 +189,7 @@ def main(args):
             pad_to_max=featurizer_config['pad_to'] == "max",
             shuffle=False,
             multi_gpu=multi_gpu)
-    audio_preprocessor = AudioPreprocessing(**featurizer_config)
+    audio_preprocessor = preprocessing.AudioPreprocessing(**featurizer_config)
 
     #encoderdecoder = JasperEncoderDecoder(jasper_model_definition=jasper_model_definition, feat_in=1024, num_classes=len(ctc_vocab))
     model = RNNT(
@@ -228,7 +236,18 @@ def main(args):
 
     model = model_multi_gpu(model, multi_gpu)
 
-    greedy_decoder = TransducerBeamDecoder(len(ctc_vocab) - 1, model.module if multi_gpu else model)
+    #greedy_decoder = RNNTGreedyDecoder(
+    #    len(ctc_vocab) - 1, model.module if multi_gpu else model
+    #)
+    from decoders import RNNTBeamDecoder
+    greedy_decoder = RNNTBeamDecoder(
+        blank_index=len(ctc_vocab) - 1,
+        model=model.module if multi_gpu else model,
+        beam_width=64,
+        length_norm=False,
+        max_symbols_per_step=100,
+        prune_threshold=0.001
+    )
 
     eval(
         data_layer=data_layer,

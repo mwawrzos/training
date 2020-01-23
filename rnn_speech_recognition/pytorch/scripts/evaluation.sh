@@ -17,8 +17,8 @@
 echo "Container nvidia build = " $NVIDIA_BUILD_ID
 
 DATA_DIR=${1:-"/datasets/LibriSpeech"}
-DATASET=${2:-"dev-clean"}
-MODEL_CONFIG=${3:-"configs/jasper10x5dr_sp_offline_specaugment.toml"}
+DATASET=${2:-"dev-other"}
+MODEL_CONFIG=${3:-"configs/rnnt.toml"}
 RESULT_DIR=${4:-"/results"}
 CHECKPOINT=$5
 CREATE_LOGFILE=${6:-"true"}
@@ -27,7 +27,7 @@ NUM_GPUS=${8:-1}
 PRECISION=${9:-"fp32"}
 NUM_STEPS=${10:-"-1"}
 SEED=${11:-0}
-BATCH_SIZE=${12:-64}
+BATCH_SIZE=${12:-1}
 
 
 if [ "$CREATE_LOGFILE" = "true" ] ; then
