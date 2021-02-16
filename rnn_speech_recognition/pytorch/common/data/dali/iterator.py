@@ -87,7 +87,7 @@ class DaliRnntIterator(object):
         transcripts = self.tr[ids]
         transcripts = torch.nn.utils.rnn.pad_sequence(transcripts, batch_first=True)
 
-        return transcripts.cuda(), self.t_sizes[ids].cuda()
+        return transcripts, self.t_sizes[ids]
 
     def __next__(self):
         data = self.dali_it.__next__()

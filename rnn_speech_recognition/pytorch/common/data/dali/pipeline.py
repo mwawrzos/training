@@ -212,5 +212,5 @@ class DaliPipeline(nvidia.dali.pipeline.Pipeline):
         audio = self.pad(audio)
 
         # When modifying DALI pipeline returns, make sure you update `output_map` in DALIGenericIterator invocation
-        return audio.gpu(), label, audio_len.gpu()
+        return audio, label, audio_len
 
