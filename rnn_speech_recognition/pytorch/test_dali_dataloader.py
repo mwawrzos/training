@@ -49,16 +49,15 @@ if __name__ == "__main__":
     tokenizer_kw = config.tokenizer(cfg)
     tokenizer = Tokenizer(**tokenizer_kw)
 
-    train_feat_proc = torch.nn.Sequential(
-        features.FilterbankFeatures(optim_level=0, **train_features_kw),
-        train_specaugm_kw and features.SpecAugment(optim_level=0, **train_specaugm_kw) or torch.nn.Identity(),
-        features.FrameSplicing(optim_level=0, **train_splicing_kw),
-        features.FillPadding(optim_level=0, ),
-    )
-
     use_dali = True
 
     if use_dali:
+
+        train_feat_proc = torch.nn.Sequential(
+            train_specaugm_kw and features.SpecAugment(optim_level=0, **train_specaugm_kw) or torch.nn.Identity(),
+            features.FrameSplicing(optim_level=0, **train_splicing_kw),
+            features.FillPadding(optim_level=0, ),
+        )
 
         sampler = dali_sampler.SimpleSampler()
 
@@ -74,6 +73,13 @@ if __name__ == "__main__":
                                       device_type="cpu",
                                       tokenizer=tokenizer)
     else:
+        train_feat_proc = torch.nn.Sequential(
+            features.FilterbankFeatures(optim_level=0, **train_features_kw),
+            train_specaugm_kw and features.SpecAugment(optim_level=0, **train_specaugm_kw) or torch.nn.Identity(),
+            features.FrameSplicing(optim_level=0, **train_splicing_kw),
+            features.FillPadding(optim_level=0, ),
+        )
+
         world_size = 1
         batch_size = 4
         args.local_rank = 0
