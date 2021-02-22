@@ -1,8 +1,3 @@
-# DISCLAIMER
-This codebase is a work in progress. There are known and unknown bugs in the implementation, and has not been optimized in any way.
-
-MLPerf has neither finalized on a decision to add a speech recognition benchmark, nor as this implementationn/architecture as a reference implementation.
-
 # 1. Problem 
 Speech recognition accepts raw audio samples and produces a corresponding text transcription.
 
@@ -96,22 +91,51 @@ Inside the container, use the following script to start training.
 Make sure the downloaded and preprocessed dataset is located at `<DATA_DIR>/LibriSpeech` on the host (see Step 3), which corresponds to `/datasets/LibriSpeech` inside the container.
 
 ```bash
-NUM_GPUS=<NUM_GPUS> bash scripts/train.sh
+bash scripts/train.sh
+```
+
+This script tries to use 8 GPUs by default.
+To run 1-gpu training, use the following command:
+
+```bash
+NUM_GPUS=1 GRADIENT_ACCUMULATION_STEPS=64 scripts/train.sh
 ```
 
 # 3. Dataset/Environment
 ### Publication/Attribution
 ["OpenSLR LibriSpeech Corpus"](http://www.openslr.org/12/) provides over 1000 hours of speech data in the form of raw audio.
 ### Data preprocessing
-What preprocessing is done to the the dataset? 
+Data preprocessing is described by scripts mentioned in the [Steps to download data](#steps-to-download-data).
+### Data pipeline
+Transcripts are encoded to sentencepieces using model produced in [Steps to download data](#steps-to-download-data).
+Audio processing consists of the following steps:
+1. audio is decoded with sample rate choosen uniformly between 13800 and 18400;
+2. silience is trimmed with -60 dB threshold;
+3. random noise with normal distribution and 0.00001 amplitude is applied;
+4. Pre-emphasis filter is applied;
+1. spectograms are calculated with 512 ffts, 20ms window and 10ms stride;
+1. MelFilterBanks are calculated with 80 features and normalization;
+1. features are translated to decibeles with log(10) multiplier reference magnitude 1 and 1e-20 cutoff;
+1. 
 ### Training and test data separation
-How is the test set extracted?
+Dataset authors separated it to test and training subsets. For this benchmark, training is done on train-clean-100, train-clean-360 and train-other-500 subsets. Evaluation is done on dev-clean subset.
 ### Training data order
-In what order is the training data traversed?
+To reduce data padding in minibatches, data bucketing is applied.
+The algorithm is implemented here:
+[link](https://github.com/mlcommons/training/blob/2126999a1ffff542064bb3208650a1e673920dcf/rnn_speech_recognition/pytorch/common/data/dali/sampler.py#L65-L105)
+and can be described as follows:
+0. drop samples than given threshold;
+1. sort data by audio length;
+2. split data into 6 equally sized buckets;
+3. for every epochs:
+    1. shuffle data in each bucket;
+    2. as long as all samples are not divisible by global batch size, remove random element from random bucket;
+    3. concatenate all buckets;
+    4. split samples into minibatches;
+    5. shuffle minibatches in the epoch.
+
 ### Test data order
-In what order is the test data traversed?
-### Simulation environment (RL models only)
-Describe simulation environment briefly, if applicable. 
+Test data order is the same as in the dataset.
 # 4. Model
 ### Publication/Attribution
 Cite paper describing model plus any additional attribution requested by code authors 
